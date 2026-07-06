@@ -1,0 +1,12 @@
+# ignore everything by default, only track web resources for the sim site
+*
+!.gitignore
+!.vercelignore
+!*.html
+!*.css
+!*.js
+!*.png
+!*.jpg
+!*.jpeg
+!*.svg
+!*.ico
