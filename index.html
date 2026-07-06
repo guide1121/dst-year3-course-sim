@@ -67,8 +67,9 @@ select{padding:.35rem;border-radius:6px;border:1px solid var(--border);backgroun
   <button class="btn-ghost" id="resetBtn">↺ Reset</button>
   <label class="hint">ความเร็วบอทแย่งที่นั่ง:</label>
   <select id="speedSel">
+    <option value="" selected disabled>-- เลือกความเร็ว --</option>
     <option value="slow">ช้า (ซ้อมเบสิก)</option>
-    <option value="normal" selected>ปกติ (จำลอง 98 คนแย่งจริง)</option>
+    <option value="normal">ปกติ (จำลอง 98 คนแย่งจริง)</option>
     <option value="fast">โหด (ทุกคนกดพร้อมกัน)</option>
     <option value="hardcore">🔥 HARDCORE (ASPX server จริง — postback หน่วง + error สุ่ม)</option>
   </select>
@@ -296,13 +297,15 @@ function showResult(){
 }
 
 function start(){
+  const speedVal = document.getElementById('speedSel').value;
+  if(!speedVal){ log('⚠ กรุณาเลือกความเร็วบอทก่อนเริ่ม', 'fail'); return; }
   initState();
   document.getElementById('banner').innerHTML='';
   document.getElementById('timer').classList.remove('danger');
   document.getElementById('log').innerHTML='';
   showPostback(false);
   startTime = Date.now();
-  currentSpeed = document.getElementById('speedSel').value;
+  currentSpeed = speedVal;
   const profile = SPEED_PROFILES[currentSpeed];
   render();
   clearInterval(tickHandle);
@@ -317,6 +320,7 @@ document.getElementById('resetBtn').onclick = ()=>{
   clearInterval(tickHandle); initState(); showPostback(false);
   document.getElementById('banner').innerHTML=''; document.getElementById('log').innerHTML='';
   document.getElementById('timer').textContent='00.0s'; document.getElementById('serverStatus').textContent='Idle';
+  document.getElementById('speedSel').value = '';
   render();
 };
 document.getElementById('confirmBtn').onclick = ()=>{
