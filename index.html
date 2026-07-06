@@ -44,6 +44,14 @@ th{color:var(--muted);font-weight:600}
 .result-banner.lose{background:rgba(214,69,69,.15);color:#d64545}
 select{padding:.35rem;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text)}
 .hint{font-size:.78rem;color:var(--muted);margin-top:.4rem}
+.postback-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:999}
+.postback-overlay.show{display:flex}
+.postback-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.2rem 1.6rem;text-align:center;font-size:.85rem;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.spinner{width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--purple);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto .6rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pingbar{height:4px;border-radius:3px;background:var(--border);overflow:hidden;margin-top:1rem}
+.pingbar span{display:block;height:100%;background:var(--orange);animation:ping 1.4s ease-in-out infinite}
+@keyframes ping{0%{width:0%}50%{width:70%}100%{width:100%}}
 </style>
 
 <div class="topbar">🎓 Subject Selection — DST Registration Simulator (Practice Mode)</div>
@@ -62,8 +70,11 @@ select{padding:.35rem;border-radius:6px;border:1px solid var(--border);backgroun
     <option value="slow">ช้า (ซ้อมเบสิก)</option>
     <option value="normal" selected>ปกติ (จำลอง 98 คนแย่งจริง)</option>
     <option value="fast">โหด (ทุกคนกดพร้อมกัน)</option>
+    <option value="hardcore">🔥 HARDCORE (ASPX server จริง — postback หน่วง + error สุ่ม)</option>
   </select>
 </div>
+
+<div class="box" style="margin-bottom:1rem" id="serverBox"><h4>Server Status (จำลอง ASPX)</h4><span id="serverStatus">Idle</span></div>
 
 <div id="banner"></div>
 
@@ -93,6 +104,15 @@ select{padding:.35rem;border-radius:6px;border:1px solid var(--border);backgroun
   </div>
 </div>
 
+<div class="postback-overlay" id="postbackOverlay">
+  <div class="postback-box">
+    <div class="spinner"></div>
+    กำลังประมวลผล... (ASPX PostBack)<br>
+    <span style="color:var(--muted);font-size:.75rem" id="postbackNote">กรุณารอสักครู่ ห้ามกดซ้ำ</span>
+    <div class="pingbar"><span></span></div>
+  </div>
+</div>
+
 <script>
 const SUBJECTS = [
   {code:'ITDS341', name:'Fundamentals of Data Science', tag:'data', tagLabel:'Data', credit:3, quota:60},
@@ -105,7 +125,14 @@ const TOTAL_STUDENTS = 98;
 // ประมาณการความนิยมแต่ละวิชา (สัดส่วนคนแย่งเข้า) ตามที่วิเคราะห์กันไว้
 const POPULARITY = {ITDS341: 0.62, ITDS342: 0.30, ITDS331: 0.18, ITDS351: 0.22, ITDS362: 0.10};
 
-let state, tickHandle, startTime, ended;
+let state, tickHandle, startTime, ended, currentSpeed;
+
+const SPEED_PROFILES = {
+  slow:     {botInterval: 900, minDelay: 0,    maxDelay: 0,    errorRate: 0,    label:'ไม่มีการหน่วง'},
+  normal:   {botInterval: 500, minDelay: 400,  maxDelay: 900,  errorRate: 0.03, label:'หน่วงเล็กน้อย'},
+  fast:     {botInterval: 250, minDelay: 700,  maxDelay: 1600, errorRate: 0.08, label:'หน่วงปานกลาง'},
+  hardcore: {botInterval: 180, minDelay: 1500, maxDelay: 4500, errorRate: 0.22, label:'ASPX postback หน่วงหนัก + session error สุ่ม'},
+};
 
 function initState(){
   state = {};
@@ -171,14 +198,57 @@ function log(msg, cls){
 
 function pickSubject(code){
   if(ended) return;
-  const st = state[code];
+  const profile = SPEED_PROFILES[currentSpeed] || SPEED_PROFILES.normal;
   const already = SUBJECTS.filter(s=>state[s.code].myPick).length;
   if(already>=3){ log(`⚠ เลือกครบ 3 วิชาแล้ว ต้อง Remove ก่อนถึงจะเพิ่มได้`, 'fail'); return; }
+
+  const st = state[code];
   if(st.available<=0){ log(`✗ ${code} เต็มพอดี — ช้าไป 1 จังหวะ!`, 'fail'); return; }
-  st.available--;
-  st.myPick = true;
-  log(`✓ จองที่นั่ง ${code} สำเร็จ (เหลือ ${st.available})`, 'ok');
-  render();
+
+  const delay = profile.minDelay + Math.random()*(profile.maxDelay-profile.minDelay);
+  document.getElementById('addBtn').disabled = true;
+  document.getElementById('confirmBtn').disabled = true;
+  showPostback(true, delay);
+  log(`⏳ ส่งคำขอจอง ${code} ... (ASPX กำลังประมวลผล ${(delay/1000).toFixed(1)}s)`);
+
+  setTimeout(()=>{
+    showPostback(false);
+    if(ended) { render(); return; }
+
+    // server error จำลอง (session timeout / viewstate error) — เสียเวลาแต่ไม่เสียที่นั่ง
+    if(Math.random() < profile.errorRate){
+      log(`💥 Server Error: "Invalid postback or callback argument" — ${code} ต้องลองใหม่!`, 'fail');
+      render();
+      return;
+    }
+
+    // เช็คที่นั่ง ณ ตอนที่ postback เสร็จจริง (ไม่ใช่ตอนกด) — นี่คือจุดที่โหดของจริง
+    const cur = state[code];
+    const already2 = SUBJECTS.filter(s=>state[s.code].myPick).length;
+    if(already2>=3){ log(`⚠ ระหว่างรอ คุณเลือกครบ 3 วิชาไปแล้วจากที่อื่น`, 'fail'); render(); return; }
+    if(cur.available<=0){
+      log(`✗ ${code} เต็มไปแล้วระหว่างที่ server ประมวลผล — โดนแซงคิว!`, 'fail');
+      render();
+      return;
+    }
+    cur.available--;
+    cur.myPick = true;
+    log(`✓ จองที่นั่ง ${code} สำเร็จ (เหลือ ${cur.available})`, 'ok');
+    render();
+  }, delay);
+}
+
+function showPostback(on, delay){
+  const overlay = document.getElementById('postbackOverlay');
+  const note = document.getElementById('postbackNote');
+  const status = document.getElementById('serverStatus');
+  overlay.classList.toggle('show', on);
+  if(on){
+    note.textContent = `กรุณารอสักครู่ ห้ามกดซ้ำ (~${(delay/1000).toFixed(1)}s)`;
+    status.textContent = '🟡 Processing postback...';
+  } else {
+    status.textContent = '🟢 Idle';
+  }
 }
 
 function botTick(speedMs){
@@ -188,11 +258,12 @@ function botTick(speedMs){
   if(elapsed>15) document.getElementById('timer').classList.add('danger');
 
   // bots grab seats — burst หนักช่วงแรก แล้วค่อยๆ ลดลง (จำลองการแย่งตอนเปิดระบบ)
+  const hardcoreBoost = currentSpeed==='hardcore' ? 1.6 : 1;
   SUBJECTS.forEach(s=>{
     const st = state[s.code];
     if(st.available<=0) return;
     const burstFactor = Math.max(0.15, 1 - elapsed/20); // แรงช่วงแรก
-    const chance = POPULARITY[s.code] * burstFactor;
+    const chance = POPULARITY[s.code] * burstFactor * hardcoreBoost;
     if(Math.random() < chance){
       const grab = Math.random()<0.3 ? 2 : 1;
       st.available = Math.max(0, st.available - grab);
@@ -228,21 +299,42 @@ function start(){
   initState();
   document.getElementById('banner').innerHTML='';
   document.getElementById('timer').classList.remove('danger');
+  document.getElementById('log').innerHTML='';
+  showPostback(false);
   startTime = Date.now();
-  const speed = document.getElementById('speedSel').value;
-  const interval = speed==='slow' ? 900 : speed==='fast' ? 250 : 500;
+  currentSpeed = document.getElementById('speedSel').value;
+  const profile = SPEED_PROFILES[currentSpeed];
   render();
   clearInterval(tickHandle);
-  tickHandle = setInterval(()=>botTick(), interval);
-  log(`🚀 เปิดระบบจำลอง — ผู้แข่งขัน ${TOTAL_STUDENTS} คน โควต้า 60/วิชา`);
+  tickHandle = setInterval(()=>botTick(), profile.botInterval);
+  log(`🚀 เปิดระบบจำลอง — ผู้แข่งขัน ${TOTAL_STUDENTS} คน โควต้า 60/วิชา | โหมด: ${currentSpeed} (${profile.label})`);
+  if(currentSpeed==='hardcore') log(`⚠️ HARDCORE: ทุกคลิก Add จะหน่วง 1.5-4.5s แบบ ASPX postback จริง และมีโอกาส 22% ที่ server error ระหว่างทาง — ที่นั่งอาจถูกแย่งไประหว่างรอ!`, 'fail');
 }
 
 document.getElementById('addBtn').onclick = ()=> pickSubject(document.getElementById('addSelect').value);
 document.getElementById('startBtn').onclick = start;
-document.getElementById('resetBtn').onclick = ()=>{ clearInterval(tickHandle); initState(); document.getElementById('banner').innerHTML=''; document.getElementById('log').innerHTML=''; document.getElementById('timer').textContent='00.0s'; render(); };
+document.getElementById('resetBtn').onclick = ()=>{
+  clearInterval(tickHandle); initState(); showPostback(false);
+  document.getElementById('banner').innerHTML=''; document.getElementById('log').innerHTML='';
+  document.getElementById('timer').textContent='00.0s'; document.getElementById('serverStatus').textContent='Idle';
+  render();
+};
 document.getElementById('confirmBtn').onclick = ()=>{
-  const picked = SUBJECTS.filter(s=>state[s.code].myPick).length;
-  log(`📩 Confirm กดแล้ว — ล็อก ${picked} วิชา`, 'ok');
+  const profile = SPEED_PROFILES[currentSpeed] || SPEED_PROFILES.normal;
+  const delay = profile.minDelay + Math.random()*(profile.maxDelay-profile.minDelay);
+  document.getElementById('confirmBtn').disabled = true;
+  document.getElementById('addBtn').disabled = true;
+  showPostback(true, delay);
+  setTimeout(()=>{
+    showPostback(false);
+    const picked = SUBJECTS.filter(s=>state[s.code].myPick).length;
+    if(Math.random() < profile.errorRate){
+      log(`💥 Confirm ล้มเหลว: server timeout — กรุณากด Confirm ใหม่`, 'fail');
+    } else {
+      log(`📩 Confirm สำเร็จ — ล็อก ${picked} วิชา`, 'ok');
+    }
+    render();
+  }, delay || 0);
 };
 
 initState();
