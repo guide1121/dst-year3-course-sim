@@ -1,13 +1,16 @@
 <title>Subject Selection — Practice Simulator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root{color-scheme:light dark;--green:#1a7a4c;--purple:#6b4fd6;--orange:#e07a1f;--blue:#2f7fd6;--red:#d64545;--bg:#f4f6f8;--card:#fff;--text:#1c2430;--muted:#6b7684;--border:#e1e5ea}
 @media (prefers-color-scheme: dark){:root{--bg:#12161c;--card:#1b212b;--text:#e7ebf0;--muted:#8b96a3;--border:#2a323d}}
 :root[data-theme="dark"]{--bg:#12161c;--card:#1b212b;--text:#e7ebf0;--muted:#8b96a3;--border:#2a323d}
 :root[data-theme="light"]{--bg:#f4f6f8;--card:#fff;--text:#1c2430;--muted:#6b7684;--border:#e1e5ea}
 *{box-sizing:border-box}
-body{margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);padding:1.2rem;font-size:14px}
-.topbar{display:flex;align-items:center;gap:.5rem;font-weight:600;color:var(--green);margin-bottom:1rem}
+html{overflow-x:hidden}
+body{margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);padding:1.2rem;font-size:14px;overflow-x:hidden}
+.topbar{display:flex;align-items:center;gap:.5rem;font-weight:600;color:var(--green);margin-bottom:1rem;flex-wrap:wrap}
 .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin-bottom:1rem}
+.tablewrap{width:100%;overflow-x:auto}
 .box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.8rem 1rem}
 .box.orange{background:rgba(224,122,31,.12);border-color:rgba(224,122,31,.4)}
 .box.blue{background:rgba(47,127,214,.12);border-color:rgba(47,127,214,.4)}
@@ -44,6 +47,19 @@ th{color:var(--muted);font-weight:600}
 .result-banner.lose{background:rgba(214,69,69,.15);color:#d64545}
 select{padding:.35rem;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text)}
 .hint{font-size:.78rem;color:var(--muted);margin-top:.4rem}
+
+@media (max-width: 820px){
+  body{padding:.7rem;font-size:13px}
+  .grid{grid-template-columns:1fr}
+  .panels{grid-template-columns:1fr}
+  .controls{flex-direction:column;align-items:stretch}
+  .controls select, .controls button{width:100%}
+  .addrow{flex-direction:column}
+  .addrow select, .addrow button{width:100%}
+  table{font-size:.75rem}
+  th,td{padding:.4rem .3rem}
+  .postback-box{width:88%;max-width:340px}
+}
 .postback-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:999}
 .postback-overlay.show{display:flex}
 .postback-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.2rem 1.6rem;text-align:center;font-size:.85rem;box-shadow:0 8px 30px rgba(0,0,0,.3)}
@@ -82,10 +98,12 @@ select{padding:.35rem;border-radius:6px;border:1px solid var(--border);backgroun
 <div class="panels">
   <div class="panel">
     <h3>Available Subjects — Semester 1/2024</h3>
+    <div class="tablewrap">
     <table>
       <thead><tr><th>Subject</th><th>สาย</th><th>Credit</th><th>Available</th></tr></thead>
       <tbody id="subjectTable"></tbody>
     </table>
+    </div>
     <div class="log" id="log"></div>
   </div>
 
@@ -95,10 +113,12 @@ select{padding:.35rem;border-radius:6px;border:1px solid var(--border);backgroun
       <select id="addSelect"></select>
       <button class="btn-add" id="addBtn">Add Subject</button>
     </div>
+    <div class="tablewrap">
     <table>
       <thead><tr><th>Subject</th><th>Credit</th><th></th></tr></thead>
       <tbody id="cart"></tbody>
     </table>
+    </div>
     <div class="hint" id="cartCount">Total Selection: 0/3</div>
     <button class="btn-primary" id="confirmBtn" style="margin-top:.8rem;width:100%">Confirm</button>
     <div class="hint" style="margin-top:.6rem">💡 กลยุทธ์ FCFS ที่วางไว้: เลือก 341 → 351 → 331 ตามลำดับใน dropdown แล้วกด Add Subject ให้เร็ว ถ้าตัวไหนเต็มกลางทาง ให้สลับไปตัวสำรองทันที (342 หรือ 362)</div>
@@ -161,15 +181,16 @@ function render(){
     tbody.appendChild(tr);
   });
 
-  // dropdown: only subjects not yet picked and not full
+  // dropdown: only subjects not yet picked and not full — starts blank, no default subject
   const addSelect = document.getElementById('addSelect');
   const prevVal = addSelect.value;
   const choosable = SUBJECTS.filter(s=>!state[s.code].myPick);
-  addSelect.innerHTML = choosable.length ? choosable.map(s=>{
+  const blankOpt = '<option value="" selected disabled>-- เลือกวิชา --</option>';
+  addSelect.innerHTML = choosable.length ? blankOpt + choosable.map(s=>{
     const st = state[s.code];
     const full = st.available<=0;
     return `<option value="${s.code}" ${full?'disabled':''}>${s.code} ${s.name}${full?' — FULL':''}</option>`;
-  }).join('') : '<option disabled>ไม่มีวิชาให้เลือกแล้ว</option>';
+  }).join('') : '<option value="" selected disabled>ไม่มีวิชาให้เลือกแล้ว</option>';
   if(choosable.some(s=>s.code===prevVal)) addSelect.value = prevVal;
 
   // cart table
@@ -314,7 +335,11 @@ function start(){
   if(currentSpeed==='hardcore') log(`⚠️ HARDCORE: ทุกคลิก Add จะหน่วง 1.5-4.5s แบบ ASPX postback จริง และมีโอกาส 22% ที่ server error ระหว่างทาง — ที่นั่งอาจถูกแย่งไประหว่างรอ!`, 'fail');
 }
 
-document.getElementById('addBtn').onclick = ()=> pickSubject(document.getElementById('addSelect').value);
+document.getElementById('addBtn').onclick = ()=>{
+  const code = document.getElementById('addSelect').value;
+  if(!code){ log('⚠ กรุณาเลือกวิชาจาก dropdown ก่อน', 'fail'); return; }
+  pickSubject(code);
+};
 document.getElementById('startBtn').onclick = start;
 document.getElementById('resetBtn').onclick = ()=>{
   clearInterval(tickHandle); initState(); showPostback(false);
