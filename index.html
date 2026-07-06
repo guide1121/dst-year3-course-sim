@@ -292,14 +292,6 @@ function botTick(speedMs){
     }
   });
   render();
-
-  if(elapsed >= 25){
-    ended = true;
-    clearInterval(tickHandle);
-    document.getElementById('timer').classList.remove('danger');
-    log('⏱ จบรอบจำลอง (เต็มเวลา 25 วินาที)');
-    showResult();
-  }
 }
 
 function showResult(){
@@ -359,10 +351,16 @@ document.getElementById('confirmBtn').onclick = ()=>{
     const picked = SUBJECTS.filter(s=>state[s.code].myPick).length;
     if(Math.random() < profile.errorRate){
       log(`💥 Confirm ล้มเหลว: server timeout — กรุณากด Confirm ใหม่`, 'fail');
+      render();
     } else {
       log(`📩 Confirm สำเร็จ — ล็อก ${picked} วิชา`, 'ok');
+      ended = true;
+      clearInterval(tickHandle);
+      document.getElementById('timer').classList.remove('danger');
+      log(`⏱ หยุดเวลาไว้ที่ ${document.getElementById('timer').textContent}`);
+      render();
+      showResult();
     }
-    render();
   }, delay || 0);
 };
 
