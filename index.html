@@ -144,18 +144,32 @@ const SUBJECTS = [
   {code:'ITDS362', name:'Software QA and Testing', tag:'qa', tagLabel:'QA', credit:3, quota:60},
 ];
 const TOTAL_STUDENTS = 98;
-// ประมาณการความนิยมแต่ละวิชา (สัดส่วนคนแย่งเข้า) ตามที่วิเคราะห์กันไว้
+const OTHER_STUDENTS = TOTAL_STUDENTS - 1; // เหลือคุณอีก 1 คน — คนอื่นแย่งกันคนละ 3 วิชาเท่านั้น
+// ประมาณการความนิยมแต่ละวิชา (น้ำหนักสุ่มว่าคนอื่นมักเลือกวิชาไหน) ตามที่วิเคราะห์กันไว้
 const POPULARITY = {ITDS341: 0.62, ITDS342: 0.30, ITDS331: 0.18, ITDS351: 0.22, ITDS362: 0.10};
 
-let state, tickHandle, startTime, ended, currentSpeed;
+let state, bots, tickHandle, startTime, ended, currentSpeed;
 
 const SPEED_PROFILES = {
-  slow:     {botInterval: 900, minDelay: 0,    maxDelay: 0,    errorRate: 0,    label:'ไม่มีการหน่วง'},
-  normal:   {botInterval: 500, minDelay: 400,  maxDelay: 900,  errorRate: 0.03, label:'หน่วงเล็กน้อย'},
-  fast:     {botInterval: 250, minDelay: 700,  maxDelay: 1600, errorRate: 0.08, label:'หน่วงปานกลาง'},
-  hardcore: {botInterval: 120, minDelay: 1500, maxDelay: 4500, errorRate: 0.22, label:'ASPX postback หน่วงหนัก + session error สุ่ม + จอโกหก'},
+  slow:     {botInterval: 900, minDelay: 0,    maxDelay: 0,    errorRate: 0,    arrivalSpread: 30, arrivalSkew: 1,   label:'คนอื่นทยอยลงแบบไม่รีบ'},
+  normal:   {botInterval: 500, minDelay: 400,  maxDelay: 900,  errorRate: 0.02, arrivalSpread: 18, arrivalSkew: 1.5, label:'คนอื่นแห่ลงตอนเปิดระบบพอสมควร'},
+  fast:     {botInterval: 250, minDelay: 700,  maxDelay: 1600, errorRate: 0.05, arrivalSpread: 10, arrivalSkew: 2.5, label:'คนอื่นแทบทั้งหมดกดพร้อมกันช่วงแรก'},
+  hardcore: {botInterval: 150, minDelay: 1200, maxDelay: 3000, errorRate: 0.08, arrivalSpread: 6,  arrivalSkew: 3.5, label:'ASPX postback หน่วง + จอโกหกเล็กน้อย — แต่ยังพอสู้ได้'},
 };
-let staleSyncHandle;
+
+function weightedPick3(){
+  // สุ่มเลือก 3 วิชาแบบไม่ซ้ำ ถ่วงน้ำหนักตามความนิยม (จำลองว่า นศ. คนอื่นสนใจวิชาไหนมากกว่ากัน)
+  let pool = SUBJECTS.map(s=>({code:s.code, w:POPULARITY[s.code]}));
+  const picks = [];
+  for(let i=0;i<3 && pool.length;i++){
+    const total = pool.reduce((a,p)=>a+p.w,0);
+    let r = Math.random()*total, idx=0;
+    for(;idx<pool.length-1;idx++){ r-=pool[idx].w; if(r<=0) break; }
+    picks.push(pool[idx].code);
+    pool.splice(idx,1);
+  }
+  return picks;
+}
 
 function initState(){
   state = {};
@@ -163,6 +177,14 @@ function initState(){
     state[s.code] = {available: s.quota, displayed: s.quota, myPick: false, full:false};
   });
   ended = false;
+}
+
+function initBots(profile){
+  bots = Array.from({length: OTHER_STUDENTS}, ()=>({
+    picks: weightedPick3(),
+    arrival: profile.arrivalSpread * Math.pow(Math.random(), profile.arrivalSkew),
+    done: false,
+  }));
 }
 
 function render(){
@@ -236,8 +258,8 @@ function pickSubject(code){
 
   let delay = profile.minDelay + Math.random()*(profile.maxDelay-profile.minDelay);
   let hung = false;
-  if(isHardcore && Math.random() < 0.18){
-    delay += 3000 + Math.random()*5000;
+  if(isHardcore && Math.random() < 0.10){
+    delay += 1500 + Math.random()*2000;
     hung = true;
   }
   document.getElementById('addBtn').disabled = true;
@@ -293,25 +315,22 @@ function botTick(speedMs){
   document.getElementById('timer').textContent = elapsed.toFixed(1)+'s';
   if(elapsed>15) document.getElementById('timer').classList.add('danger');
 
-  // bots grab seats — burst หนักช่วงแรก แล้วค่อยๆ ลดลง (จำลองการแย่งตอนเปิดระบบ)
   const isHardcore = currentSpeed==='hardcore';
-  const hardcoreBoost = isHardcore ? 2.4 : 1;
-  const burstFloor = isHardcore ? 0.35 : 0.15;
-  SUBJECTS.forEach(s=>{
-    const st = state[s.code];
-    if(st.available<=0) return;
-    const burstFactor = Math.max(burstFloor, 1 - elapsed/(isHardcore?45:20));
-    const chance = POPULARITY[s.code] * burstFactor * hardcoreBoost;
-    if(Math.random() < chance){
-      const grab = isHardcore ? (Math.random()<0.5 ? 3 : 2) : (Math.random()<0.3 ? 2 : 1);
-      st.available = Math.max(0, st.available - grab);
-    }
+
+  // นศ. อีก 97 คนทยอย "มาถึง" ตามเวลาที่สุ่มไว้ตอน start — แต่ละคนแย่งได้แค่ 3 วิชาของตัวเองเท่านั้น (จบเมื่อครบทุกคน ไม่ใช่แย่งไม่รู้จบ)
+  bots.forEach(b=>{
+    if(b.done || b.arrival > elapsed) return;
+    b.done = true;
+    b.picks.forEach(code=>{
+      const st = state[code];
+      if(st.available>0) st.available--;
+    });
   });
 
-  // จอโกหก: ค่าที่แสดงผลซิงค์ช้ากว่าความจริง (hardcore เท่านั้น)
+  // จอโกหก: ค่าที่แสดงผลซิงค์ช้ากว่าความจริงเล็กน้อย (hardcore เท่านั้น)
   if(isHardcore){
     const now = Date.now();
-    if(!window.__lastStaleSync || now - window.__lastStaleSync > 2500){
+    if(!window.__lastStaleSync || now - window.__lastStaleSync > 1500){
       window.__lastStaleSync = now;
       SUBJECTS.forEach(s=> state[s.code].displayed = state[s.code].available);
     }
@@ -319,12 +338,13 @@ function botTick(speedMs){
     SUBJECTS.forEach(s=> state[s.code].displayed = state[s.code].available);
   }
 
-  // session timeout สุ่ม — เตะออกจากระบบ เสียของที่เลือกไว้ทั้งหมด (hardcore เท่านั้น)
-  if(isHardcore && !ended && Math.random() < 0.006){
+  // session timeout สุ่ม (โอกาสต่ำ, เกิดได้ครั้งเดียวต่อรอบ) — hardcore เท่านั้น
+  if(isHardcore && !ended && !window.__timeoutFired && Math.random() < 0.0015){
     const lost = SUBJECTS.filter(s=>state[s.code].myPick);
     if(lost.length){
+      window.__timeoutFired = true;
       lost.forEach(s=>{ state[s.code].available++; state[s.code].myPick=false; });
-      log(`💀 SESSION EXPIRED — ระบบเตะออก ต้องเลือกใหม่ทั้งหมด (${lost.map(s=>s.code).join(', ')} หลุดจากตะกร้า)`, 'fail');
+      log(`💀 SESSION EXPIRED — ระบบเตะออก ต้องเลือกใหม่ (${lost.map(s=>s.code).join(', ')} หลุดจากตะกร้า)`, 'fail');
     }
   }
 
@@ -357,21 +377,23 @@ function showResult(){
 function start(){
   const speedVal = document.getElementById('speedSel').value;
   if(!speedVal){ log('⚠ กรุณาเลือกความเร็วบอทก่อนเริ่ม', 'fail'); return; }
+  currentSpeed = speedVal;
+  const profile = SPEED_PROFILES[currentSpeed];
   initState();
+  initBots(profile);
   document.getElementById('banner').innerHTML='';
   document.getElementById('timer').classList.remove('danger');
   document.getElementById('log').innerHTML='';
   document.getElementById('viewerTicker').textContent='';
   window.__lastStaleSync = 0;
+  window.__timeoutFired = false;
   showPostback(false);
   startTime = Date.now();
-  currentSpeed = speedVal;
-  const profile = SPEED_PROFILES[currentSpeed];
   render();
   clearInterval(tickHandle);
   tickHandle = setInterval(()=>botTick(), profile.botInterval);
-  log(`🚀 เปิดระบบจำลอง — ผู้แข่งขัน ${TOTAL_STUDENTS} คน โควต้า 60/วิชา | โหมด: ${currentSpeed} (${profile.label})`);
-  if(currentSpeed==='hardcore') log(`⚠️ HARDCORE: postback หน่วง 1.5-4.5s (บางครั้งค้างถึง 10s), server error 22%, ตัวเลขที่นั่งจอโกหกช้ากว่าจริง ~2.5s, และมีโอกาส session timeout สุ่มเตะทิ้งทั้งตะกร้า — ห้ามเผลอ!`, 'fail');
+  log(`🚀 เปิดระบบจำลอง — ผู้แข่งขันจริง ${OTHER_STUDENTS} คน (รวมคุณ = ${TOTAL_STUDENTS}) แต่ละคนแย่งได้แค่คนละ 3 วิชา | โหมด: ${currentSpeed} (${profile.label})`);
+  if(currentSpeed==='hardcore') log(`⚠️ HARDCORE: postback หน่วง 1.2-3s (บางครั้งค้างเพิ่ม), ตัวเลขที่นั่งจอโกหกช้ากว่าจริง ~1.5s, มีโอกาสต่ำที่ session timeout หรือ rollback หลัง confirm — แต่ competition ยังจำกัดแค่ 97 คน ไม่ได้แย่งไม่รู้จบ`, 'fail');
 }
 
 document.getElementById('addBtn').onclick = ()=>{
@@ -385,7 +407,7 @@ document.getElementById('resetBtn').onclick = ()=>{
   document.getElementById('banner').innerHTML=''; document.getElementById('log').innerHTML='';
   document.getElementById('timer').textContent='00.0s'; document.getElementById('serverStatus').textContent='Idle';
   document.getElementById('speedSel').value = ''; document.getElementById('viewerTicker').textContent='';
-  window.__lastStaleSync = 0;
+  window.__lastStaleSync = 0; window.__timeoutFired = false;
   render();
 };
 document.getElementById('confirmBtn').onclick = ()=>{
@@ -409,8 +431,8 @@ document.getElementById('confirmBtn').onclick = ()=>{
       render();
       showResult();
 
-      // ฝันร้ายสุดท้าย: sync ภายหลังพบว่าวิชาหนึ่งไม่ผ่านจริง (เฉพาะ hardcore) — เวลายังหยุดนิ่งเหมือนเดิม
-      if(currentSpeed==='hardcore' && Math.random() < 0.15){
+      // ฝันร้ายสุดท้าย: sync ภายหลังพบว่าวิชาหนึ่งไม่ผ่านจริง (เฉพาะ hardcore, โอกาสต่ำ) — เวลายังหยุดนิ่งเหมือนเดิม
+      if(currentSpeed==='hardcore' && Math.random() < 0.06){
         setTimeout(()=>{
           const lockedIn = SUBJECTS.filter(s=>state[s.code].myPick);
           if(!lockedIn.length) return;
