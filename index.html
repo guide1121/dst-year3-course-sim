@@ -122,6 +122,7 @@ select{padding:.35rem;border-radius:6px;border:1px solid var(--border);backgroun
     <div class="hint" id="cartCount">Total Selection: 0/3</div>
     <button class="btn-primary" id="confirmBtn" style="margin-top:.8rem;width:100%">Confirm</button>
     <div class="hint" style="margin-top:.6rem">💡 กลยุทธ์ FCFS ที่วางไว้: เลือก 341 → 351 → 331 ตามลำดับใน dropdown แล้วกด Add Subject ให้เร็ว ถ้าตัวไหนเต็มกลางทาง ให้สลับไปตัวสำรองทันที (342 หรือ 362)</div>
+    <div class="hint" id="viewerTicker" style="margin-top:.4rem"></div>
   </div>
 </div>
 
@@ -152,13 +153,14 @@ const SPEED_PROFILES = {
   slow:     {botInterval: 900, minDelay: 0,    maxDelay: 0,    errorRate: 0,    label:'ไม่มีการหน่วง'},
   normal:   {botInterval: 500, minDelay: 400,  maxDelay: 900,  errorRate: 0.03, label:'หน่วงเล็กน้อย'},
   fast:     {botInterval: 250, minDelay: 700,  maxDelay: 1600, errorRate: 0.08, label:'หน่วงปานกลาง'},
-  hardcore: {botInterval: 180, minDelay: 1500, maxDelay: 4500, errorRate: 0.22, label:'ASPX postback หน่วงหนัก + session error สุ่ม'},
+  hardcore: {botInterval: 120, minDelay: 1500, maxDelay: 4500, errorRate: 0.22, label:'ASPX postback หน่วงหนัก + session error สุ่ม + จอโกหก'},
 };
+let staleSyncHandle;
 
 function initState(){
   state = {};
   SUBJECTS.forEach(s=>{
-    state[s.code] = {available: s.quota, myPick: false, full:false};
+    state[s.code] = {available: s.quota, displayed: s.quota, myPick: false, full:false};
   });
   ended = false;
 }
@@ -166,18 +168,21 @@ function initState(){
 function render(){
   const tbody = document.getElementById('subjectTable');
   tbody.innerHTML = '';
+  const isHardcore = currentSpeed==='hardcore';
   SUBJECTS.forEach(s=>{
     const st = state[s.code];
-    const pct = st.available / s.quota;
+    const shown = isHardcore ? st.displayed : st.available;
+    const pct = shown / s.quota;
     let cls = 'ok';
-    if(st.available<=0) cls='full';
+    if(shown<=0) cls='full';
     else if(pct<0.25) cls='low';
+    const stale = isHardcore && shown !== st.available;
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><b>${s.code}</b><br><span style="color:var(--muted);font-size:.75rem">${s.name}</span>${st.myPick?' <span style=\"color:var(--green);font-weight:700\">✓</span>':''}</td>
       <td><span class="tag ${s.tag}">${s.tagLabel}</span></td>
       <td>${s.credit}</td>
-      <td class="seats ${cls}">${st.available<=0 ? 'FULL' : st.available + '/' + s.quota}</td>`;
+      <td class="seats ${cls}">${shown<=0 ? 'FULL' : shown + '/' + s.quota}${stale?' <span title="ตัวเลขนี้อาจไม่ตรงกับ server จริง" style="opacity:.6">🐢</span>':''}</td>`;
     tbody.appendChild(tr);
   });
 
@@ -188,7 +193,7 @@ function render(){
   const blankOpt = '<option value="" selected disabled>-- เลือกวิชา --</option>';
   addSelect.innerHTML = choosable.length ? blankOpt + choosable.map(s=>{
     const st = state[s.code];
-    const full = st.available<=0;
+    const full = (isHardcore ? st.displayed : st.available) <= 0;
     return `<option value="${s.code}" ${full?'disabled':''}>${s.code} ${s.name}${full?' — FULL':''}</option>`;
   }).join('') : '<option value="" selected disabled>ไม่มีวิชาให้เลือกแล้ว</option>';
   if(choosable.some(s=>s.code===prevVal)) addSelect.value = prevVal;
@@ -225,13 +230,22 @@ function pickSubject(code){
   if(already>=3){ log(`⚠ เลือกครบ 3 วิชาแล้ว ต้อง Remove ก่อนถึงจะเพิ่มได้`, 'fail'); return; }
 
   const st = state[code];
-  if(st.available<=0){ log(`✗ ${code} เต็มพอดี — ช้าไป 1 จังหวะ!`, 'fail'); return; }
+  const isHardcore = currentSpeed==='hardcore';
+  const shownVal = isHardcore ? st.displayed : st.available;
+  if(shownVal<=0){ log(`✗ ${code} เต็มพอดี — ช้าไป 1 จังหวะ!`, 'fail'); return; }
 
-  const delay = profile.minDelay + Math.random()*(profile.maxDelay-profile.minDelay);
+  let delay = profile.minDelay + Math.random()*(profile.maxDelay-profile.minDelay);
+  let hung = false;
+  if(isHardcore && Math.random() < 0.18){
+    delay += 3000 + Math.random()*5000;
+    hung = true;
+  }
   document.getElementById('addBtn').disabled = true;
   document.getElementById('confirmBtn').disabled = true;
   showPostback(true, delay);
-  log(`⏳ ส่งคำขอจอง ${code} ... (ASPX กำลังประมวลผล ${(delay/1000).toFixed(1)}s)`);
+  log(hung
+    ? `🥶 ${code}: server ค้าง... ไม่มี response (คาดว่า ~${(delay/1000).toFixed(1)}s)`
+    : `⏳ ส่งคำขอจอง ${code} ... (ASPX กำลังประมวลผล ${(delay/1000).toFixed(1)}s)`);
 
   setTimeout(()=>{
     showPostback(false);
@@ -280,17 +294,48 @@ function botTick(speedMs){
   if(elapsed>15) document.getElementById('timer').classList.add('danger');
 
   // bots grab seats — burst หนักช่วงแรก แล้วค่อยๆ ลดลง (จำลองการแย่งตอนเปิดระบบ)
-  const hardcoreBoost = currentSpeed==='hardcore' ? 1.6 : 1;
+  const isHardcore = currentSpeed==='hardcore';
+  const hardcoreBoost = isHardcore ? 2.4 : 1;
+  const burstFloor = isHardcore ? 0.35 : 0.15;
   SUBJECTS.forEach(s=>{
     const st = state[s.code];
     if(st.available<=0) return;
-    const burstFactor = Math.max(0.15, 1 - elapsed/20); // แรงช่วงแรก
+    const burstFactor = Math.max(burstFloor, 1 - elapsed/(isHardcore?45:20));
     const chance = POPULARITY[s.code] * burstFactor * hardcoreBoost;
     if(Math.random() < chance){
-      const grab = Math.random()<0.3 ? 2 : 1;
+      const grab = isHardcore ? (Math.random()<0.5 ? 3 : 2) : (Math.random()<0.3 ? 2 : 1);
       st.available = Math.max(0, st.available - grab);
     }
   });
+
+  // จอโกหก: ค่าที่แสดงผลซิงค์ช้ากว่าความจริง (hardcore เท่านั้น)
+  if(isHardcore){
+    const now = Date.now();
+    if(!window.__lastStaleSync || now - window.__lastStaleSync > 2500){
+      window.__lastStaleSync = now;
+      SUBJECTS.forEach(s=> state[s.code].displayed = state[s.code].available);
+    }
+  } else {
+    SUBJECTS.forEach(s=> state[s.code].displayed = state[s.code].available);
+  }
+
+  // session timeout สุ่ม — เตะออกจากระบบ เสียของที่เลือกไว้ทั้งหมด (hardcore เท่านั้น)
+  if(isHardcore && !ended && Math.random() < 0.006){
+    const lost = SUBJECTS.filter(s=>state[s.code].myPick);
+    if(lost.length){
+      lost.forEach(s=>{ state[s.code].available++; state[s.code].myPick=false; });
+      log(`💀 SESSION EXPIRED — ระบบเตะออก ต้องเลือกใหม่ทั้งหมด (${lost.map(s=>s.code).join(', ')} หลุดจากตะกร้า)`, 'fail');
+    }
+  }
+
+  // live viewer ticker — เพิ่มความกดดัน
+  const ticker = document.getElementById('viewerTicker');
+  if(ticker){
+    const hot = SUBJECTS.slice().sort((a,b)=>POPULARITY[b.code]-POPULARITY[a.code])[0];
+    const watching = Math.round(8 + Math.random()*(isHardcore?40:15));
+    ticker.textContent = `👀 ${watching} คนกำลังดู ${hot.code} อยู่ตอนนี้`;
+  }
+
   render();
 }
 
@@ -316,6 +361,8 @@ function start(){
   document.getElementById('banner').innerHTML='';
   document.getElementById('timer').classList.remove('danger');
   document.getElementById('log').innerHTML='';
+  document.getElementById('viewerTicker').textContent='';
+  window.__lastStaleSync = 0;
   showPostback(false);
   startTime = Date.now();
   currentSpeed = speedVal;
@@ -324,7 +371,7 @@ function start(){
   clearInterval(tickHandle);
   tickHandle = setInterval(()=>botTick(), profile.botInterval);
   log(`🚀 เปิดระบบจำลอง — ผู้แข่งขัน ${TOTAL_STUDENTS} คน โควต้า 60/วิชา | โหมด: ${currentSpeed} (${profile.label})`);
-  if(currentSpeed==='hardcore') log(`⚠️ HARDCORE: ทุกคลิก Add จะหน่วง 1.5-4.5s แบบ ASPX postback จริง และมีโอกาส 22% ที่ server error ระหว่างทาง — ที่นั่งอาจถูกแย่งไประหว่างรอ!`, 'fail');
+  if(currentSpeed==='hardcore') log(`⚠️ HARDCORE: postback หน่วง 1.5-4.5s (บางครั้งค้างถึง 10s), server error 22%, ตัวเลขที่นั่งจอโกหกช้ากว่าจริง ~2.5s, และมีโอกาส session timeout สุ่มเตะทิ้งทั้งตะกร้า — ห้ามเผลอ!`, 'fail');
 }
 
 document.getElementById('addBtn').onclick = ()=>{
@@ -337,7 +384,8 @@ document.getElementById('resetBtn').onclick = ()=>{
   clearInterval(tickHandle); initState(); showPostback(false);
   document.getElementById('banner').innerHTML=''; document.getElementById('log').innerHTML='';
   document.getElementById('timer').textContent='00.0s'; document.getElementById('serverStatus').textContent='Idle';
-  document.getElementById('speedSel').value = '';
+  document.getElementById('speedSel').value = ''; document.getElementById('viewerTicker').textContent='';
+  window.__lastStaleSync = 0;
   render();
 };
 document.getElementById('confirmBtn').onclick = ()=>{
@@ -360,6 +408,19 @@ document.getElementById('confirmBtn').onclick = ()=>{
       log(`⏱ หยุดเวลาไว้ที่ ${document.getElementById('timer').textContent}`);
       render();
       showResult();
+
+      // ฝันร้ายสุดท้าย: sync ภายหลังพบว่าวิชาหนึ่งไม่ผ่านจริง (เฉพาะ hardcore) — เวลายังหยุดนิ่งเหมือนเดิม
+      if(currentSpeed==='hardcore' && Math.random() < 0.15){
+        setTimeout(()=>{
+          const lockedIn = SUBJECTS.filter(s=>state[s.code].myPick);
+          if(!lockedIn.length) return;
+          const victim = lockedIn[Math.floor(Math.random()*lockedIn.length)];
+          state[victim.code].myPick = false;
+          log(`☠️ Late sync error: ระบบพบว่า ${victim.code} ไม่ผ่านการยืนยันจริง — สละสิทธิ์อัตโนมัติ (แม้ Confirm จะสำเร็จไปแล้ว)`, 'fail');
+          render();
+          showResult();
+        }, 2500 + Math.random()*2500);
+      }
     }
   }, delay || 0);
 };
