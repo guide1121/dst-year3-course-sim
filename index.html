@@ -151,10 +151,10 @@ const POPULARITY = {ITDS341: 0.62, ITDS342: 0.30, ITDS331: 0.18, ITDS351: 0.22, 
 let state, bots, tickHandle, startTime, ended, currentSpeed;
 
 const SPEED_PROFILES = {
-  slow:     {botInterval: 900, minDelay: 0,    maxDelay: 0,    errorRate: 0,    arrivalSpread: 30, arrivalSkew: 1,   label:'คนอื่นทยอยลงแบบไม่รีบ'},
-  normal:   {botInterval: 500, minDelay: 400,  maxDelay: 900,  errorRate: 0.02, arrivalSpread: 18, arrivalSkew: 1.5, label:'คนอื่นแห่ลงตอนเปิดระบบพอสมควร'},
-  fast:     {botInterval: 250, minDelay: 700,  maxDelay: 1600, errorRate: 0.05, arrivalSpread: 10, arrivalSkew: 2.5, label:'คนอื่นแทบทั้งหมดกดพร้อมกันช่วงแรก'},
-  hardcore: {botInterval: 150, minDelay: 1200, maxDelay: 3000, errorRate: 0.08, arrivalSpread: 6,  arrivalSkew: 3.5, label:'ASPX postback หน่วง + จอโกหกเล็กน้อย — แต่ยังพอสู้ได้'},
+  slow:     {botInterval: 900, minDelay: 0,    maxDelay: 0,    errorRate: 0,    arrivalSpread: 60, arrivalSkew: 1,   label:'คนอื่นทยอยลงแบบไม่รีบ'},
+  normal:   {botInterval: 500, minDelay: 400,  maxDelay: 900,  errorRate: 0.02, arrivalSpread: 40, arrivalSkew: 1.1, label:'คนอื่นแห่ลงตอนเปิดระบบพอสมควร'},
+  fast:     {botInterval: 250, minDelay: 700,  maxDelay: 1600, errorRate: 0.05, arrivalSpread: 25, arrivalSkew: 1.5, label:'คนอื่นแทบทั้งหมดกดพร้อมกันช่วงแรก'},
+  hardcore: {botInterval: 150, minDelay: 1200, maxDelay: 3000, errorRate: 0.08, arrivalSpread: 16, arrivalSkew: 1.8, label:'ASPX postback หน่วง + จอโกหกเล็กน้อย — แต่ยังพอสู้ได้'},
 };
 
 function weightedPick3(){
@@ -182,7 +182,7 @@ function initState(){
 function initBots(profile){
   bots = Array.from({length: OTHER_STUDENTS}, ()=>({
     picks: weightedPick3(),
-    arrival: profile.arrivalSpread * Math.pow(Math.random(), profile.arrivalSkew),
+    arrival: 1.5 + profile.arrivalSpread * Math.pow(Math.random(), profile.arrivalSkew),
     done: false,
   }));
 }
