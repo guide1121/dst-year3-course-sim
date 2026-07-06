@@ -1,0 +1,250 @@
+<title>Subject Selection — Practice Simulator</title>
+<style>
+:root{color-scheme:light dark;--green:#1a7a4c;--purple:#6b4fd6;--orange:#e07a1f;--blue:#2f7fd6;--red:#d64545;--bg:#f4f6f8;--card:#fff;--text:#1c2430;--muted:#6b7684;--border:#e1e5ea}
+@media (prefers-color-scheme: dark){:root{--bg:#12161c;--card:#1b212b;--text:#e7ebf0;--muted:#8b96a3;--border:#2a323d}}
+:root[data-theme="dark"]{--bg:#12161c;--card:#1b212b;--text:#e7ebf0;--muted:#8b96a3;--border:#2a323d}
+:root[data-theme="light"]{--bg:#f4f6f8;--card:#fff;--text:#1c2430;--muted:#6b7684;--border:#e1e5ea}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);padding:1.2rem;font-size:14px}
+.topbar{display:flex;align-items:center;gap:.5rem;font-weight:600;color:var(--green);margin-bottom:1rem}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin-bottom:1rem}
+.box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.8rem 1rem}
+.box.orange{background:rgba(224,122,31,.12);border-color:rgba(224,122,31,.4)}
+.box.blue{background:rgba(47,127,214,.12);border-color:rgba(47,127,214,.4)}
+.box h4{margin:0 0 .3rem;font-size:.8rem;color:var(--muted)}
+.controls{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center}
+button{cursor:pointer;border:none;border-radius:7px;padding:.5rem 1rem;font-weight:600;font-size:.85rem}
+.btn-primary{background:var(--purple);color:#fff}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-add{background:var(--green);color:#fff;padding:.3rem .7rem;font-size:.8rem}
+.btn-remove{background:var(--red);color:#fff;padding:.25rem .5rem;font-size:.75rem}
+.panels{display:grid;grid-template-columns:1.5fr 1fr;gap:1rem}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem}
+.panel h3{margin:0 0 .6rem;font-size:1rem}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th,td{text-align:left;padding:.5rem .4rem;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600}
+.tag{display:inline-block;padding:.1rem .4rem;border-radius:5px;font-size:.7rem;font-weight:700;color:#fff}
+.tag.data{background:#2f7fd6}.tag.math{background:#8b5fd6}.tag.iot{background:#1a9e6b}.tag.sec{background:#d64545}.tag.qa{background:#c98a1f}
+.seats{font-weight:700}
+.seats.low{color:var(--orange)}.seats.full{color:var(--red)}.seats.ok{color:var(--green)}
+.status-full{color:var(--red);font-weight:700;font-size:.8rem}
+.selected-row{display:flex;justify-content:space-between;align-items:center;padding:.5rem;border-bottom:1px solid var(--border);font-size:.85rem}
+.addrow{display:flex;gap:.5rem;margin-bottom:.6rem}
+.addrow select{flex:1}
+.addrow button{white-space:nowrap}
+.timer{font-variant-numeric:tabular-nums;font-weight:700;font-size:1.1rem}
+.timer.danger{color:var(--red)}
+.log{max-height:160px;overflow-y:auto;font-size:.78rem;color:var(--muted);border-top:1px solid var(--border);margin-top:.6rem;padding-top:.5rem}
+.log div{margin-bottom:.2rem}
+.log .fail{color:var(--red)}
+.log .ok{color:var(--green)}
+.result-banner{padding:.8rem;border-radius:8px;margin-bottom:.8rem;font-weight:600;font-size:.9rem;text-align:center}
+.result-banner.win{background:rgba(26,158,107,.15);color:#1a9e6b}
+.result-banner.lose{background:rgba(214,69,69,.15);color:#d64545}
+select{padding:.35rem;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text)}
+.hint{font-size:.78rem;color:var(--muted);margin-top:.4rem}
+</style>
+
+<div class="topbar">🎓 Subject Selection — DST Registration Simulator (Practice Mode)</div>
+
+<div class="grid">
+  <div class="box orange"><h4>Selection Criteria</h4>Select up to <b>3</b> subject(s)</div>
+  <div class="box blue"><h4>Selection Period</h4>ซ้อม FCFS — วินาทีมีค่า!</div>
+  <div class="box"><h4>เวลาที่ผ่านไป</h4><span class="timer" id="timer">00.0s</span></div>
+</div>
+
+<div class="controls">
+  <button class="btn-primary" id="startBtn">▶ Start Selection (จำลอง)</button>
+  <button class="btn-ghost" id="resetBtn">↺ Reset</button>
+  <label class="hint">ความเร็วบอทแย่งที่นั่ง:</label>
+  <select id="speedSel">
+    <option value="slow">ช้า (ซ้อมเบสิก)</option>
+    <option value="normal" selected>ปกติ (จำลอง 98 คนแย่งจริง)</option>
+    <option value="fast">โหด (ทุกคนกดพร้อมกัน)</option>
+  </select>
+</div>
+
+<div id="banner"></div>
+
+<div class="panels">
+  <div class="panel">
+    <h3>Available Subjects — Semester 1/2024</h3>
+    <table>
+      <thead><tr><th>Subject</th><th>สาย</th><th>Credit</th><th>Available</th></tr></thead>
+      <tbody id="subjectTable"></tbody>
+    </table>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Selection Subjects</h3>
+    <div class="addrow">
+      <select id="addSelect"></select>
+      <button class="btn-add" id="addBtn">Add Subject</button>
+    </div>
+    <table>
+      <thead><tr><th>Subject</th><th>Credit</th><th></th></tr></thead>
+      <tbody id="cart"></tbody>
+    </table>
+    <div class="hint" id="cartCount">Total Selection: 0/3</div>
+    <button class="btn-primary" id="confirmBtn" style="margin-top:.8rem;width:100%">Confirm</button>
+    <div class="hint" style="margin-top:.6rem">💡 กลยุทธ์ FCFS ที่วางไว้: เลือก 341 → 351 → 331 ตามลำดับใน dropdown แล้วกด Add Subject ให้เร็ว ถ้าตัวไหนเต็มกลางทาง ให้สลับไปตัวสำรองทันที (342 หรือ 362)</div>
+  </div>
+</div>
+
+<script>
+const SUBJECTS = [
+  {code:'ITDS341', name:'Fundamentals of Data Science', tag:'data', tagLabel:'Data', credit:3, quota:60},
+  {code:'ITDS342', name:'Advanced Math & Stats for DS', tag:'math', tagLabel:'Math', credit:3, quota:60},
+  {code:'ITDS331', name:'Embedded and Cyber-Physical Systems', tag:'iot', tagLabel:'IoT', credit:3, quota:60},
+  {code:'ITDS351', name:'Advanced Cybersecurity', tag:'sec', tagLabel:'Security', credit:3, quota:60},
+  {code:'ITDS362', name:'Software QA and Testing', tag:'qa', tagLabel:'QA', credit:3, quota:60},
+];
+const TOTAL_STUDENTS = 98;
+// ประมาณการความนิยมแต่ละวิชา (สัดส่วนคนแย่งเข้า) ตามที่วิเคราะห์กันไว้
+const POPULARITY = {ITDS341: 0.62, ITDS342: 0.30, ITDS331: 0.18, ITDS351: 0.22, ITDS362: 0.10};
+
+let state, tickHandle, startTime, ended;
+
+function initState(){
+  state = {};
+  SUBJECTS.forEach(s=>{
+    state[s.code] = {available: s.quota, myPick: false, full:false};
+  });
+  ended = false;
+}
+
+function render(){
+  const tbody = document.getElementById('subjectTable');
+  tbody.innerHTML = '';
+  SUBJECTS.forEach(s=>{
+    const st = state[s.code];
+    const pct = st.available / s.quota;
+    let cls = 'ok';
+    if(st.available<=0) cls='full';
+    else if(pct<0.25) cls='low';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><b>${s.code}</b><br><span style="color:var(--muted);font-size:.75rem">${s.name}</span>${st.myPick?' <span style=\"color:var(--green);font-weight:700\">✓</span>':''}</td>
+      <td><span class="tag ${s.tag}">${s.tagLabel}</span></td>
+      <td>${s.credit}</td>
+      <td class="seats ${cls}">${st.available<=0 ? 'FULL' : st.available + '/' + s.quota}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  // dropdown: only subjects not yet picked and not full
+  const addSelect = document.getElementById('addSelect');
+  const prevVal = addSelect.value;
+  const choosable = SUBJECTS.filter(s=>!state[s.code].myPick);
+  addSelect.innerHTML = choosable.length ? choosable.map(s=>{
+    const st = state[s.code];
+    const full = st.available<=0;
+    return `<option value="${s.code}" ${full?'disabled':''}>${s.code} ${s.name}${full?' — FULL':''}</option>`;
+  }).join('') : '<option disabled>ไม่มีวิชาให้เลือกแล้ว</option>';
+  if(choosable.some(s=>s.code===prevVal)) addSelect.value = prevVal;
+
+  // cart table
+  const picked = SUBJECTS.filter(s=>state[s.code].myPick);
+  const cart = document.getElementById('cart');
+  cart.innerHTML = picked.length ? '' : '<tr><td colspan="3" class="hint">No Selection Subject</td></tr>';
+  picked.forEach(s=>{
+    const row = document.createElement('tr');
+    row.innerHTML = `<td>${s.code} ${s.name}</td><td>${s.credit}</td><td><button class="btn-remove" data-code="${s.code}">Remove</button></td>`;
+    cart.appendChild(row);
+  });
+  cart.querySelectorAll('.btn-remove').forEach(b=>{
+    b.onclick = ()=>{ state[b.dataset.code].available++; state[b.dataset.code].myPick=false; render(); };
+  });
+  document.getElementById('cartCount').textContent = `Total Selection: ${picked.length}/3`;
+  document.getElementById('confirmBtn').disabled = picked.length===0 || ended;
+  document.getElementById('addBtn').disabled = picked.length>=3 || choosable.length===0 || ended;
+}
+
+function log(msg, cls){
+  const l = document.getElementById('log');
+  const d = document.createElement('div');
+  if(cls) d.className = cls;
+  d.textContent = msg;
+  l.prepend(d);
+}
+
+function pickSubject(code){
+  if(ended) return;
+  const st = state[code];
+  const already = SUBJECTS.filter(s=>state[s.code].myPick).length;
+  if(already>=3){ log(`⚠ เลือกครบ 3 วิชาแล้ว ต้อง Remove ก่อนถึงจะเพิ่มได้`, 'fail'); return; }
+  if(st.available<=0){ log(`✗ ${code} เต็มพอดี — ช้าไป 1 จังหวะ!`, 'fail'); return; }
+  st.available--;
+  st.myPick = true;
+  log(`✓ จองที่นั่ง ${code} สำเร็จ (เหลือ ${st.available})`, 'ok');
+  render();
+}
+
+function botTick(speedMs){
+  if(ended) return;
+  const elapsed = (Date.now()-startTime)/1000;
+  document.getElementById('timer').textContent = elapsed.toFixed(1)+'s';
+  if(elapsed>15) document.getElementById('timer').classList.add('danger');
+
+  // bots grab seats — burst หนักช่วงแรก แล้วค่อยๆ ลดลง (จำลองการแย่งตอนเปิดระบบ)
+  SUBJECTS.forEach(s=>{
+    const st = state[s.code];
+    if(st.available<=0) return;
+    const burstFactor = Math.max(0.15, 1 - elapsed/20); // แรงช่วงแรก
+    const chance = POPULARITY[s.code] * burstFactor;
+    if(Math.random() < chance){
+      const grab = Math.random()<0.3 ? 2 : 1;
+      st.available = Math.max(0, st.available - grab);
+    }
+  });
+  render();
+
+  if(elapsed >= 25){
+    ended = true;
+    clearInterval(tickHandle);
+    document.getElementById('timer').classList.remove('danger');
+    log('⏱ จบรอบจำลอง (เต็มเวลา 25 วินาที)');
+    showResult();
+  }
+}
+
+function showResult(){
+  const banner = document.getElementById('banner');
+  const picked = SUBJECTS.filter(s=>state[s.code].myPick).map(s=>s.code);
+  const hasMain = ['ITDS341','ITDS351','ITDS331'].every(c=>picked.includes(c));
+  let cls, msg;
+  if(picked.length===3 && hasMain){
+    cls='win'; msg=`🎉 สำเร็จ! ได้แผนหลักครบ: ${picked.join(', ')}`;
+  } else if(picked.length===3){
+    cls='win'; msg=`✅ ได้ครบ 3 วิชา (ใช้ fallback): ${picked.join(', ')} — ลองย้อนดูว่าตรงกับตารางสำรองที่วางแผนไว้ไหม`;
+  } else {
+    cls='lose'; msg=`❌ ได้แค่ ${picked.length}/3 วิชา (${picked.join(', ') || 'ไม่มี'}) — ลองใหม่แล้วตัดสินใจเร็วขึ้น`;
+  }
+  banner.innerHTML = `<div class="result-banner ${cls}">${msg}</div>`;
+}
+
+function start(){
+  initState();
+  document.getElementById('banner').innerHTML='';
+  document.getElementById('timer').classList.remove('danger');
+  startTime = Date.now();
+  const speed = document.getElementById('speedSel').value;
+  const interval = speed==='slow' ? 900 : speed==='fast' ? 250 : 500;
+  render();
+  clearInterval(tickHandle);
+  tickHandle = setInterval(()=>botTick(), interval);
+  log(`🚀 เปิดระบบจำลอง — ผู้แข่งขัน ${TOTAL_STUDENTS} คน โควต้า 60/วิชา`);
+}
+
+document.getElementById('addBtn').onclick = ()=> pickSubject(document.getElementById('addSelect').value);
+document.getElementById('startBtn').onclick = start;
+document.getElementById('resetBtn').onclick = ()=>{ clearInterval(tickHandle); initState(); document.getElementById('banner').innerHTML=''; document.getElementById('log').innerHTML=''; document.getElementById('timer').textContent='00.0s'; render(); };
+document.getElementById('confirmBtn').onclick = ()=>{
+  const picked = SUBJECTS.filter(s=>state[s.code].myPick).length;
+  log(`📩 Confirm กดแล้ว — ล็อก ${picked} วิชา`, 'ok');
+};
+
+initState();
+render();
+</script>
